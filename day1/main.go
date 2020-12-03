@@ -39,7 +39,7 @@ func part1(input []int) int {
 	for _, i := range input {
 		for _, j := range input {
 			if i+j == 2020 {
-				return i*j
+				return i * j
 			}
 		}
 	}
@@ -52,7 +52,7 @@ func part2(input []int) int {
 		for _, j := range input {
 			for _, k := range input {
 				if i+j+k == 2020 {
-					return i*j*k
+					return i * j * k
 				}
 			}
 		}

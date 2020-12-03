@@ -12,9 +12,9 @@ import (
 )
 
 type PasswordParts struct {
-	Low int
-	High int
-	Target string
+	Low      int
+	High     int
+	Target   string
 	Password string
 }
 
