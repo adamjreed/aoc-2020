@@ -11,13 +11,6 @@ import (
 	"strconv"
 )
 
-type Navigator struct {
-	Directions []*Direction
-	Ship       *Coords
-	Waypoint   *Coords
-	Heading    int
-}
-
 type Coords struct {
 	posX int
 	posY int
@@ -26,6 +19,12 @@ type Coords struct {
 type Direction struct {
 	Instruction string
 	Amount      int
+}
+
+type Navigator struct {
+	Directions []*Direction
+	Ship       *Coords
+	NavMethod  NavMethod
 }
 
 func (n *Navigator) Run() (int, error) {
@@ -38,13 +37,13 @@ func (n *Navigator) Run() (int, error) {
 		case "S":
 			fallthrough
 		case "W":
-			n.Move(direction)
+			n.NavMethod.Move(direction, n.Ship)
 		case "R":
 			fallthrough
 		case "L":
-			n.Turn(direction)
+			n.NavMethod.Turn(direction, n.Ship)
 		case "F":
-			n.Advance(direction)
+			n.NavMethod.Advance(direction, n.Ship)
 		default:
 			return 0, errors.New(fmt.Sprintf("unexpected instruction: %s", direction.Instruction))
 		}
@@ -53,14 +52,78 @@ func (n *Navigator) Run() (int, error) {
 	return int(math.Abs(float64(n.Ship.posX))) + int(math.Abs(float64(n.Ship.posY))), nil
 }
 
-func (n *Navigator) Move(dir *Direction) {
-	var obj *Coords
-	if n.Waypoint != nil {
-		obj = n.Waypoint
-	} else {
-		obj = n.Ship
-	}
+type NavMethod interface {
+	Move(dir *Direction, ship *Coords)
+	Turn(dir *Direction, ship *Coords)
+	Advance(dir *Direction, ship *Coords)
+}
 
+type HeadingNav struct {
+	Heading int
+}
+
+func (h *HeadingNav) Move(dir *Direction, ship *Coords) {
+	moveObj(ship, dir)
+}
+
+func (h *HeadingNav) Turn(dir *Direction, ship *Coords) {
+	switch dir.Instruction {
+	case "R":
+		h.Heading = (h.Heading + dir.Amount) % 360
+	case "L":
+		if h.Heading < dir.Amount {
+			h.Heading = (h.Heading + 360) - dir.Amount
+		} else {
+			h.Heading -= dir.Amount
+		}
+	}
+}
+
+func (h *HeadingNav) Advance(dir *Direction, ship *Coords) {
+	if h.Heading < 90 {
+		ship.posY += dir.Amount
+	} else if h.Heading < 180 {
+		ship.posX += dir.Amount
+	} else if h.Heading < 270 {
+		ship.posY -= dir.Amount
+	} else if h.Heading < 360 {
+		ship.posX -= dir.Amount
+	}
+}
+
+type WaypointNav struct {
+	Waypoint *Coords
+}
+
+func (w *WaypointNav) Move(dir *Direction, ship *Coords) {
+	moveObj(w.Waypoint, dir)
+}
+
+func (w *WaypointNav) Turn(dir *Direction, ship *Coords) {
+	switch dir.Instruction {
+	case "R":
+		angle := degToRad(float64(dir.Amount))
+		w.RotateWaypoint(angle)
+	case "L":
+		angle := degToRad(float64(dir.Amount))
+		w.RotateWaypoint(angle * -1)
+	}
+}
+
+func (w *WaypointNav) Advance(dir *Direction, ship *Coords) {
+	ship.posY += w.Waypoint.posY * dir.Amount
+	ship.posX += w.Waypoint.posX * dir.Amount
+}
+
+func (w *WaypointNav) RotateWaypoint(angle float64) {
+	x := int(float64(w.Waypoint.posX)*math.Cos(angle)) + int(float64(w.Waypoint.posY)*math.Sin(angle))
+	y := int(float64(w.Waypoint.posY)*math.Cos(angle)) - int(float64(w.Waypoint.posX)*math.Sin(angle))
+
+	w.Waypoint.posX = x
+	w.Waypoint.posY = y
+}
+
+func moveObj(obj *Coords, dir *Direction) {
 	switch dir.Instruction {
 	case "N":
 		obj.posY += dir.Amount
@@ -71,54 +134,6 @@ func (n *Navigator) Move(dir *Direction) {
 	case "W":
 		obj.posX -= dir.Amount
 	}
-}
-
-func (n *Navigator) Advance(dir *Direction) {
-	if n.Waypoint != nil {
-		n.Ship.posY += n.Waypoint.posY * dir.Amount
-		n.Ship.posX += n.Waypoint.posX * dir.Amount
-	} else {
-		if n.Heading < 90 {
-			n.Ship.posY += dir.Amount
-		} else if n.Heading < 180 {
-			n.Ship.posX += dir.Amount
-		} else if n.Heading < 270 {
-			n.Ship.posY -= dir.Amount
-		} else if n.Heading < 360 {
-			n.Ship.posX -= dir.Amount
-		}
-	}
-}
-
-func (n *Navigator) Turn(dir *Direction) {
-	switch dir.Instruction {
-	case "R":
-		if n.Waypoint != nil {
-			angle := degToRad(float64(dir.Amount))
-			n.RotateWaypoint(angle)
-		} else {
-			n.Heading = (n.Heading + dir.Amount) % 360
-		}
-	case "L":
-		if n.Waypoint != nil {
-			angle := degToRad(float64(dir.Amount))
-			n.RotateWaypoint(angle * -1)
-		} else {
-			if n.Heading < dir.Amount {
-				n.Heading = (n.Heading + 360) - dir.Amount
-			} else {
-				n.Heading -= dir.Amount
-			}
-		}
-	}
-}
-
-func (n *Navigator) RotateWaypoint(angle float64) {
-	x := int(float64(n.Waypoint.posX)*math.Cos(angle)) + int(float64(n.Waypoint.posY)*math.Sin(angle))
-	y := int(float64(n.Waypoint.posY)*math.Cos(angle)) - int(float64(n.Waypoint.posX)*math.Sin(angle))
-
-	n.Waypoint.posX = x
-	n.Waypoint.posY = y
 }
 
 func degToRad(deg float64) float64 {
@@ -177,7 +192,9 @@ func part1(directions []*Direction) (int, error) {
 			posX: 0,
 			posY: 0,
 		},
-		Heading: 90,
+		NavMethod: &HeadingNav{
+			Heading: 90,
+		},
 	}
 
 	mDistance, err := nav.Run()
@@ -195,9 +212,11 @@ func part2(directions []*Direction) (int, error) {
 			posX: 0,
 			posY: 0,
 		},
-		Waypoint: &Coords{
-			posX: 10,
-			posY: 1,
+		NavMethod: &WaypointNav{
+			Waypoint: &Coords{
+				posX: 10,
+				posY: 1,
+			},
 		},
 	}
 
